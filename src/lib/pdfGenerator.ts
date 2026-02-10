@@ -641,19 +641,34 @@ export async function generateCollectionLetterPDF(data: CollectionLetterData): P
   const marginLeft = 25;
   const marginRight = 25;
   const contentWidth = pageWidth - marginLeft - marginRight;
-  const lineHeight = 4.5;
+  const lineHeight = 4;
   
   // Add logo
   await addLogoToPDF(doc, data.logoUrl);
   
-  let yPos = 38;
+  let yPos = 35;
+
+  // ─── TITLE ──────────────────────────────────────────────
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('COMUNICADO POR MORA', pageWidth / 2, yPos, { align: 'center' });
+  
+  yPos += 6;
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(data.institutionName, pageWidth / 2, yPos, { align: 'center' });
+
+  yPos += 5;
+  doc.setLineWidth(0.4);
+  doc.line(marginLeft, yPos, pageWidth - marginRight, yPos);
+
+  yPos += 6;
   
   // Date - right aligned
   doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
   doc.text(`Quito, ${data.currentDate}`, pageWidth - marginRight, yPos, { align: 'right' });
   
-  yPos += 10;
+  yPos += 8;
   
   // Recipient
   doc.setFont('helvetica', 'bold');
@@ -664,18 +679,13 @@ export async function generateCollectionLetterPDF(data: CollectionLetterData): P
   doc.setFontSize(9);
   doc.text('Presente.-', marginLeft, yPos);
   
-  yPos += 8;
+  yPos += 7;
   
-  // Body paragraphs - compact
-  const paragraph1 = `Reciba un cordial y fraternal saludo en nombre de todos los miembros de la ${data.institutionName}.`;
-  const paragraph2 = `Nos dirigimos a usted con el propósito de recordarle su compromiso con nuestra institución en relación con el pago de las cuotas establecidas. A la fecha, se han identificado las siguientes cuotas pendientes:`;
+  // Body - single compact paragraph
+  const bodyText = `Reciba un cordial saludo fraternal. Le informamos que, según nuestros registros, usted mantiene obligaciones pendientes con la ${data.institutionName}. A continuación se detalla el estado de sus cuotas:`;
   
   doc.setFontSize(9);
-  let splitText = doc.splitTextToSize(paragraph1, contentWidth);
-  doc.text(splitText, marginLeft, yPos);
-  yPos += splitText.length * lineHeight + 3;
-  
-  splitText = doc.splitTextToSize(paragraph2, contentWidth);
+  let splitText = doc.splitTextToSize(bodyText, contentWidth);
   doc.text(splitText, marginLeft, yPos);
   yPos += splitText.length * lineHeight + 4;
   
@@ -684,21 +694,21 @@ export async function generateCollectionLetterPDF(data: CollectionLetterData): P
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.text('Cuotas mensuales pendientes:', marginLeft, yPos);
-    yPos += 4;
+    yPos += 3;
 
     autoTable(doc, {
       startY: yPos,
-      head: [['Mes', 'Año', 'Monto pendiente']],
+      head: [['Mes', 'Año', 'Monto']],
       body: data.pendingMonths.map(pm => {
         const monthName = pm.monthName || MONTHS[pm.month - 1] || '';
         return [monthName, pm.year.toString(), `$${pm.amount.toFixed(2)}`];
       }),
       theme: 'striped',
       headStyles: { fillColor: [66, 66, 66], fontSize: 8 },
-      styles: { fontSize: 8, cellPadding: 1.5 },
+      styles: { fontSize: 8, cellPadding: 1.2 },
       margin: { left: marginLeft, right: marginRight },
     });
-    yPos = (doc as any).lastAutoTable.finalY + 4;
+    yPos = (doc as any).lastAutoTable.finalY + 3;
   }
 
   // Extraordinary debt table
@@ -706,41 +716,36 @@ export async function generateCollectionLetterPDF(data: CollectionLetterData): P
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.text('Cuotas extraordinarias pendientes:', marginLeft, yPos);
-    yPos += 4;
+    yPos += 3;
 
     autoTable(doc, {
       startY: yPos,
-      head: [['Cuota', 'Monto pendiente']],
+      head: [['Cuota', 'Monto']],
       body: data.extraordinaryPending.map(ep => [ep.feeName, `$${ep.pending.toFixed(2)}`]),
       theme: 'striped',
       headStyles: { fillColor: [66, 66, 66], fontSize: 8 },
-      styles: { fontSize: 8, cellPadding: 1.5 },
+      styles: { fontSize: 8, cellPadding: 1.2 },
       margin: { left: marginLeft, right: marginRight },
     });
-    yPos = (doc as any).lastAutoTable.finalY + 4;
+    yPos = (doc as any).lastAutoTable.finalY + 3;
   }
 
-  doc.setFontSize(10);
+  // Total box
+  doc.setFillColor(245, 245, 245);
+  doc.setDrawColor(180, 180, 180);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(marginLeft, yPos, contentWidth, 10, 2, 2, 'FD');
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
-  doc.text(`TOTAL ADEUDADO: $${data.totalOwed.toFixed(2)}`, marginLeft, yPos);
-  yPos += 6;
+  doc.text('TOTAL ADEUDADO:', marginLeft + 5, yPos + 7);
+  doc.text(`$${data.totalOwed.toFixed(2)}`, pageWidth - marginRight - 5, yPos + 7, { align: 'right' });
+  yPos += 14;
   
-  // Continuation paragraphs - compact
+  // Closing paragraph - single compact text
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  
-  const paragraph3 = `Es comprensible que puedan surgir situaciones imprevistas; sin embargo, las aportaciones de todos los hermanos son esenciales para el sostenimiento de nuestras actividades.`;
-  splitText = doc.splitTextToSize(paragraph3, contentWidth);
-  doc.text(splitText, marginLeft, yPos);
-  yPos += splitText.length * lineHeight + 2;
-  
-  const paragraph4 = `Si considera que el saldo es incorrecto, comuníquese con el Tesorero para revisar su caso. Le solicitamos regularizar su situación a la brevedad posible o establecer un plan de pagos.`;
-  splitText = doc.splitTextToSize(paragraph4, contentWidth);
-  doc.text(splitText, marginLeft, yPos);
-  yPos += splitText.length * lineHeight + 2;
-  
-  const paragraph5 = `Reiteramos nuestro compromiso fraternal y confiamos en su disposición para resolver esta situación oportunamente.`;
-  splitText = doc.splitTextToSize(paragraph5, contentWidth);
+  const closingText = `Le solicitamos regularizar su situación a la brevedad posible. Si considera que existe algún error, comuníquese con el Tesorero para revisión. Confiamos en su disposición para resolver esta situación oportunamente.`;
+  splitText = doc.splitTextToSize(closingText, contentWidth);
   doc.text(splitText, marginLeft, yPos);
   yPos += splitText.length * lineHeight + 4;
   
