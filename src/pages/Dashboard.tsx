@@ -128,66 +128,38 @@ function Dashboard() {
     return count;
   }, [members, extraordinaryIncomes, extraordinaryPayments]);
 
-  // Chart 1: Monthly income vs expenses (fiscal year Jul-Jun)
-  const monthlyChartData = useMemo(() => {
-    const fiscalMonths = [{
-      month: 7,
-      label: 'Jul'
-    }, {
-      month: 8,
-      label: 'Ago'
-    }, {
-      month: 9,
-      label: 'Sep'
-    }, {
-      month: 10,
-      label: 'Oct'
-    }, {
-      month: 11,
-      label: 'Nov'
-    }, {
-      month: 12,
-      label: 'Dic'
-    }, {
-      month: 1,
-      label: 'Ene'
-    }, {
-      month: 2,
-      label: 'Feb'
-    }, {
-      month: 3,
-      label: 'Mar'
-    }, {
-      month: 4,
-      label: 'Abr'
-    }, {
-      month: 5,
-      label: 'May'
-    }, {
-      month: 6,
-      label: 'Jun'
-    }];
-    return fiscalMonths.map((fm, idx) => {
-      const year = idx < 6 ? currentCalendarYear : nextCalendarYear;
-      const treasury = monthlyPayments.filter(p => p.month === fm.month && p.year === year && p.payment_type !== 'pronto_pago_benefit').reduce((sum, p) => sum + Number(p.amount), 0);
-      const extraordinary = extraordinaryPayments.filter(p => {
+  // Chart 1: Current month income vs expenses only
+  const currentMonthData = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
+    const treasury = monthlyPayments
+      .filter(p => p.month === currentMonth && p.year === currentYear && p.payment_type !== 'pronto_pago_benefit')
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+
+    const extraordinary = extraordinaryPayments
+      .filter(p => {
         if (!p.payment_date) return false;
         const d = new Date(p.payment_date);
-        return d.getMonth() + 1 === fm.month && d.getFullYear() === year;
-      }).reduce((sum, p) => sum + Number(p.amount_paid), 0);
-      const expenseTotal = expenses.filter(e => {
+        return d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
+      })
+      .reduce((sum, p) => sum + Number(p.amount_paid), 0);
+
+    const expenseTotal = expenses
+      .filter(e => {
         const d = new Date(e.expense_date);
-        return d.getMonth() + 1 === fm.month && d.getFullYear() === year;
-      }).reduce((sum, e) => sum + Number(e.amount), 0);
-      return {
-        name: fm.label,
-        tesoreria: Number(treasury.toFixed(2)),
-        extraordinarias: Number(extraordinary.toFixed(2)),
-        gastos: Number(expenseTotal.toFixed(2)),
-        balance: Number((treasury + extraordinary - expenseTotal).toFixed(2))
-      };
-    });
-  }, [monthlyPayments, extraordinaryPayments, expenses, currentCalendarYear, nextCalendarYear]);
+        return d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
+      })
+      .reduce((sum, e) => sum + Number(e.amount), 0);
+
+    const totalIngresos = treasury + extraordinary;
+
+    return [
+      { name: 'Ingresos', value: Number(totalIngresos.toFixed(2)), fill: 'hsl(var(--kpi-income))' },
+      { name: 'Gastos', value: Number(expenseTotal.toFixed(2)), fill: 'hsl(var(--kpi-expense))' },
+    ];
+  }, [monthlyPayments, extraordinaryPayments, expenses]);
 
   // Chart 2: Income distribution (pie)
   const incomeDistribution = useMemo(() => {
@@ -220,21 +192,13 @@ function Dashboard() {
     })).sort((a, b) => b.value - a.value);
   }, [expenses]);
   const chartConfig = {
-    tesoreria: {
-      label: 'Tesorería',
-      color: 'hsl(var(--chart-1))'
-    },
-    extraordinarias: {
-      label: 'Cuotas Ext.',
-      color: 'hsl(var(--chart-2))'
+    ingresos: {
+      label: 'Ingresos',
+      color: 'hsl(var(--kpi-income))'
     },
     gastos: {
       label: 'Gastos',
-      color: 'hsl(var(--destructive))'
-    },
-    balance: {
-      label: 'Balance',
-      color: 'hsl(var(--chart-3))'
+      color: 'hsl(var(--kpi-expense))'
     }
   };
   return <div className="space-y-8">
@@ -256,30 +220,25 @@ function Dashboard() {
 
       {/* Charts Row */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Chart 1: Income vs Expenses by month */}
+        {/* Chart 1: Current month Income vs Expenses */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">Ingresos vs Gastos por Mes</CardTitle>
+            <CardTitle className="text-base font-semibold">
+              Ingresos vs Gastos — {MONTH_NAMES[new Date().getMonth()]} {new Date().getFullYear()}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ChartContainer config={chartConfig} className="h-[280px] w-full">
-              <BarChart data={monthlyChartData} margin={{
-              top: 5,
-              right: 10,
-              left: 0,
-              bottom: 5
-            }}>
+              <BarChart data={currentMonthData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                <XAxis dataKey="name" tick={{
-                fontSize: 11
-              }} />
-                <YAxis tick={{
-                fontSize: 11
-              }} />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 11 }} />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="tesoreria" fill="hsl(var(--chart-1))" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="extraordinarias" fill="hsl(var(--chart-2))" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="gastos" fill="hsl(var(--destructive))" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                  {currentMonthData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Bar>
               </BarChart>
             </ChartContainer>
           </CardContent>
