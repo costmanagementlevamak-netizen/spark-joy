@@ -39,6 +39,7 @@ const CHART_COLORS = [
   'hsl(var(--chart-3))',
   'hsl(var(--chart-4))',
   'hsl(var(--chart-5))',
+  'hsl(var(--chart-6))',
 ];
 
 function Dashboard() {
@@ -176,7 +177,7 @@ function Dashboard() {
   const chartConfig = {
     tesoreria: { label: 'Tesorería', color: 'hsl(var(--chart-1))' },
     extraordinarias: { label: 'Cuotas Ext.', color: 'hsl(var(--chart-2))' },
-    gastos: { label: 'Gastos', color: 'hsl(var(--destructive))' },
+    gastos: { label: 'Gastos', color: 'hsl(var(--kpi-expense))' },
     balance: { label: 'Balance', color: 'hsl(var(--chart-3))' },
   };
 
@@ -195,7 +196,8 @@ function Dashboard() {
           title="Total Ingresos"
           value={`$${totalIncome.toFixed(2)}`}
           icon={TrendingUp}
-          iconColor="text-success"
+          iconColor="text-[hsl(var(--kpi-income))]"
+          valueColor="text-[hsl(var(--kpi-income))]"
           subtitle="Clic para ver desglose"
           onClick={() => setShowIncomeDetail(true)}
         />
@@ -203,7 +205,8 @@ function Dashboard() {
           title="Total Gastos"
           value={`$${totalExpenses.toFixed(2)}`}
           icon={TrendingDown}
-          iconColor="text-destructive"
+          iconColor="text-[hsl(var(--kpi-expense))]"
+          valueColor="text-[hsl(var(--kpi-expense))]"
           subtitle="Clic para ver detalle"
           onClick={() => setShowExpenseDetail(true)}
         />
@@ -211,22 +214,23 @@ function Dashboard() {
           title="Balance"
           value={`$${balance.toFixed(2)}`}
           icon={DollarSign}
-          valueColor={balance >= 0 ? 'text-success' : 'text-destructive'}
+          iconColor="text-[hsl(var(--kpi-balance))]"
+          valueColor={balance >= 0 ? 'text-[hsl(var(--kpi-balance))]' : 'text-[hsl(var(--kpi-expense))]'}
         />
         <StatCard
           title="Miembros con mora"
           value={membersWithMora}
           icon={Users}
-          iconColor="text-warning"
-          valueColor={membersWithMora > 0 ? 'text-destructive' : 'text-success'}
+          iconColor="text-[hsl(var(--kpi-mora))]"
+          valueColor={membersWithMora > 0 ? 'text-[hsl(var(--kpi-mora))]' : 'text-[hsl(var(--kpi-income))]'}
           subtitle={`de ${members.filter(m => m.status === 'activo').length} activos`}
         />
         <StatCard
           title="C. Ext. Pendientes"
           value={pendingExtraordinary}
           icon={AlertTriangle}
-          iconColor="text-warning"
-          valueColor={pendingExtraordinary > 0 ? 'text-destructive' : 'text-success'}
+          iconColor="text-[hsl(var(--kpi-pending))]"
+          valueColor={pendingExtraordinary > 0 ? 'text-[hsl(var(--kpi-pending))]' : 'text-[hsl(var(--kpi-income))]'}
           subtitle="pagos por cobrar"
         />
       </div>
@@ -247,7 +251,7 @@ function Dashboard() {
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Bar dataKey="tesoreria" fill="hsl(var(--chart-1))" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="extraordinarias" fill="hsl(var(--chart-2))" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="gastos" fill="hsl(var(--destructive))" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="gastos" fill="hsl(var(--kpi-expense))" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ChartContainer>
           </CardContent>
@@ -324,7 +328,7 @@ function Dashboard() {
                       fontSize: '12px',
                     }}
                   />
-                  <Bar dataKey="value" fill="hsl(var(--destructive))" radius={[0, 3, 3, 0]} />
+                  <Bar dataKey="value" fill="hsl(var(--chart-4))" radius={[0, 3, 3, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
