@@ -189,7 +189,7 @@ export default function CuentasPorCobrar() {
   return <>
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><FileWarning className="h-5 w-5" /> Cuentas por Cobrar / Comunicado por Mora</CardTitle>
+          
           <CardDescription>
             Desglose de deudas por miembro — Periodo Logial: Julio {currentCalendarYear} - Junio {nextCalendarYear}. Total adeudado: ${totalGrand.toFixed(2)}
           </CardDescription>
