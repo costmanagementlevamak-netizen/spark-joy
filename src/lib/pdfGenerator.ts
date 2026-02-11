@@ -670,10 +670,11 @@ export async function generateCollectionLetterPDF(data: CollectionLetterData): P
   
   yPos += 8;
   
-  // Recipient
+  // Recipient - use normal text rendering, no special encoding
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.text(`H∴ ${data.memberName}`, marginLeft, yPos);
+  const recipientLine = 'H\u2234 ' + String(data.memberName);
+  doc.text(recipientLine, marginLeft, yPos);
   yPos += lineHeight;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);

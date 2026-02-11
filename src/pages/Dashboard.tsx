@@ -9,9 +9,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { supabase } from '@/integrations/supabase/client-unsafe';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
-import { getFiscalYearInfo, MONTH_NAMES } from '@/lib/dateUtils';
+import { getFiscalYearInfo, MONTH_NAMES, getFiscalYearMonths } from '@/lib/dateUtils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSettings } from '@/contexts/SettingsContext';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 const StatCard = memo(function StatCard({
   title,
   value,
@@ -23,99 +25,131 @@ const StatCard = memo(function StatCard({
 }: {
   title: string;
   value: string | number;
-  icon: React.ComponentType<{
-    className?: string;
-  }>;
+  icon: React.ComponentType<{ className?: string }>;
   iconColor?: string;
   valueColor?: string;
   subtitle?: string;
   onClick?: () => void;
 }) {
-  return <Card className={onClick ? 'cursor-pointer hover:bg-muted/50 transition-colors' : ''} onClick={onClick}>
+  return (
+    <Card className={onClick ? 'cursor-pointer hover:bg-muted/50 transition-colors' : ''} onClick={onClick}>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        
       </CardHeader>
       <CardContent>
         <div className={`text-2xl font-bold ${valueColor || ''}`}>{value}</div>
         {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
       </CardContent>
-    </Card>;
+    </Card>
+  );
 });
+
 const CHART_COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
+
 function Dashboard() {
   const navigate = useNavigate();
   const {
-    summary,
-    members,
-    expenses,
-    monthlyPayments,
-    extraordinaryPayments,
-    extraordinaryIncomes
+    summary, members, expenses, monthlyPayments,
+    extraordinaryPayments, extraordinaryIncomes
   } = useDataCache();
-  const {
-    settings
-  } = useSettings();
+  const { settings } = useSettings();
   const birthdayMembers = useBirthdayMembers(members);
   const [showIncomeDetail, setShowIncomeDetail] = useState(false);
   const [showExpenseDetail, setShowExpenseDetail] = useState(false);
-  const [degreeFeeTotal, setDegreeFeeTotal] = useState(0);
-  const stats = summary || {
-    totalIncome: 0,
-    totalExpenses: 0,
-    totalExtraordinaryIncome: 0,
-    balance: 0,
-    memberCount: 0,
-    pendingPayments: 0
-  };
-  const {
-    currentCalendarYear,
-    nextCalendarYear
-  } = getFiscalYearInfo();
+  const [degreeFees, setDegreeFees] = useState<Array<{ amount: number; fee_date: string }>>([]);
+
+  // Filter state: "all" or "MM-YYYY"
+  const [filterValue, setFilterValue] = useState<string>('all');
+
+  const { currentCalendarYear, nextCalendarYear } = getFiscalYearInfo();
+
   useEffect(() => {
     const fetchDegreeFees = async () => {
-      const {
-        data
-      } = await supabase.from('degree_fees').select('amount');
-      if (data) setDegreeFeeTotal(data.reduce((sum, d) => sum + Number(d.amount), 0));
+      const { data } = await supabase.from('degree_fees').select('amount, fee_date');
+      if (data) setDegreeFees(data as Array<{ amount: number; fee_date: string }>);
     };
     fetchDegreeFees();
   }, []);
+
+  // Build filter options from fiscal year months
+  const filterOptions = useMemo(() => {
+    const months = getFiscalYearMonths();
+    return months.map(({ month, year }) => ({
+      value: `${month}-${year}`,
+      label: `${MONTH_NAMES[month - 1]} ${year}`,
+    }));
+  }, []);
+
+  // Parse filter
+  const selectedFilter = useMemo(() => {
+    if (filterValue === 'all') return null;
+    const [m, y] = filterValue.split('-').map(Number);
+    return { month: m, year: y };
+  }, [filterValue]);
+
+  // Helper: check if a date string falls in the selected month/year
+  const dateMatchesFilter = (dateStr: string | null) => {
+    if (!selectedFilter || !dateStr) return !selectedFilter;
+    const d = new Date(dateStr);
+    return d.getMonth() + 1 === selectedFilter.month && d.getFullYear() === selectedFilter.year;
+  };
+
+  // Filtered data
+  const filteredMonthlyPayments = useMemo(() => {
+    if (!selectedFilter) return monthlyPayments;
+    return monthlyPayments.filter(p => p.month === selectedFilter.month && p.year === selectedFilter.year);
+  }, [monthlyPayments, selectedFilter]);
+
+  const filteredExpenses = useMemo(() => {
+    if (!selectedFilter) return expenses;
+    return expenses.filter(e => dateMatchesFilter(e.expense_date));
+  }, [expenses, selectedFilter]);
+
+  const filteredExtraordinaryPayments = useMemo(() => {
+    if (!selectedFilter) return extraordinaryPayments;
+    return extraordinaryPayments.filter(p => dateMatchesFilter(p.payment_date));
+  }, [extraordinaryPayments, selectedFilter]);
+
+  const filteredDegreeFeeTotal = useMemo(() => {
+    if (!selectedFilter) return degreeFees.reduce((sum, d) => sum + Number(d.amount), 0);
+    return degreeFees
+      .filter(d => dateMatchesFilter(d.fee_date))
+      .reduce((sum, d) => sum + Number(d.amount), 0);
+  }, [degreeFees, selectedFilter]);
+
+  // Computed totals from filtered data
   const treasuryIncome = useMemo(() => {
-    return monthlyPayments.filter(p => p.payment_type !== 'pronto_pago_benefit').reduce((sum, p) => sum + Number(p.amount), 0);
-  }, [monthlyPayments]);
+    return filteredMonthlyPayments
+      .filter(p => p.payment_type !== 'pronto_pago_benefit')
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+  }, [filteredMonthlyPayments]);
+
   const extraordinaryIncome = useMemo(() => {
-    return extraordinaryPayments.reduce((sum, p) => sum + Number(p.amount_paid), 0);
-  }, [extraordinaryPayments]);
-  const totalIncome = treasuryIncome + extraordinaryIncome + degreeFeeTotal;
-  const totalExpenses = stats.totalExpenses;
+    return filteredExtraordinaryPayments.reduce((sum, p) => sum + Number(p.amount_paid), 0);
+  }, [filteredExtraordinaryPayments]);
+
+  const totalIncome = treasuryIncome + extraordinaryIncome + filteredDegreeFeeTotal;
+  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
   const balance = totalIncome - totalExpenses;
 
-  // KPI: Members with mora (have unpaid months)
+  // KPI: Members with mora (always global - fiscal year context)
   const membersWithMora = useMemo(() => {
     const activeMembers = members.filter(m => m.status === 'activo');
     const monthlyFee = settings.monthly_fee_base;
     let count = 0;
     activeMembers.forEach(member => {
-      // Check fiscal year months
       for (let i = 0; i < 12; i++) {
         const year = i < 6 ? currentCalendarYear : nextCalendarYear;
         const month = i < 6 ? i + 7 : i - 5;
         const payment = monthlyPayments.find(p => p.member_id === member.id && p.month === month && p.year === year);
-        if (!payment) {
-          count++;
-          break;
-        }
-        if (payment.payment_type !== 'pronto_pago_benefit' && Number(payment.amount) < monthlyFee) {
-          count++;
-          break;
-        }
+        if (!payment) { count++; break; }
+        if (payment.payment_type !== 'pronto_pago_benefit' && Number(payment.amount) < monthlyFee) { count++; break; }
       }
     });
     return count;
   }, [members, monthlyPayments, settings.monthly_fee_base, currentCalendarYear, nextCalendarYear]);
 
-  // KPI: Pending extraordinary fees
+  // KPI: Pending extraordinary fees (always global)
   const pendingExtraordinary = useMemo(() => {
     const activeMembers = members.filter(m => m.status === 'activo');
     let count = 0;
@@ -128,85 +162,90 @@ function Dashboard() {
     return count;
   }, [members, extraordinaryIncomes, extraordinaryPayments]);
 
-  // Chart 1: Current month income vs expenses only
-  const currentMonthData = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1;
-    const currentYear = now.getFullYear();
+  // Chart 1: Income vs Expenses - depends on filter
+  const incomeVsExpenseData = useMemo(() => {
+    if (selectedFilter) {
+      // Single month comparison
+      return [
+        { name: 'Ingresos', value: Number(totalIncome.toFixed(2)), fill: 'hsl(var(--kpi-income))' },
+        { name: 'Gastos', value: Number(totalExpenses.toFixed(2)), fill: 'hsl(var(--kpi-expense))' },
+      ];
+    }
+    // "Todos" - monthly series across fiscal year
+    const fiscalMonths = getFiscalYearMonths();
+    return fiscalMonths.map(({ month, year }) => {
+      const mIncome = monthlyPayments
+        .filter(p => p.month === month && p.year === year && p.payment_type !== 'pronto_pago_benefit')
+        .reduce((s, p) => s + Number(p.amount), 0)
+        + extraordinaryPayments
+          .filter(p => { if (!p.payment_date) return false; const d = new Date(p.payment_date); return d.getMonth() + 1 === month && d.getFullYear() === year; })
+          .reduce((s, p) => s + Number(p.amount_paid), 0)
+        + degreeFees
+          .filter(d => { const dd = new Date(d.fee_date); return dd.getMonth() + 1 === month && dd.getFullYear() === year; })
+          .reduce((s, d) => s + Number(d.amount), 0);
+      const mExpense = expenses
+        .filter(e => { const d = new Date(e.expense_date); return d.getMonth() + 1 === month && d.getFullYear() === year; })
+        .reduce((s, e) => s + Number(e.amount), 0);
+      return {
+        name: `${MONTH_NAMES[month - 1].substring(0, 3)}`,
+        ingresos: Number(mIncome.toFixed(2)),
+        gastos: Number(mExpense.toFixed(2)),
+      };
+    });
+  }, [selectedFilter, totalIncome, totalExpenses, monthlyPayments, extraordinaryPayments, degreeFees, expenses]);
 
-    const treasury = monthlyPayments
-      .filter(p => p.month === currentMonth && p.year === currentYear && p.payment_type !== 'pronto_pago_benefit')
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-
-    const extraordinary = extraordinaryPayments
-      .filter(p => {
-        if (!p.payment_date) return false;
-        const d = new Date(p.payment_date);
-        return d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
-      })
-      .reduce((sum, p) => sum + Number(p.amount_paid), 0);
-
-    const expenseTotal = expenses
-      .filter(e => {
-        const d = new Date(e.expense_date);
-        return d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
-      })
-      .reduce((sum, e) => sum + Number(e.amount), 0);
-
-    const totalIngresos = treasury + extraordinary;
-
-    return [
-      { name: 'Ingresos', value: Number(totalIngresos.toFixed(2)), fill: 'hsl(var(--kpi-income))' },
-      { name: 'Gastos', value: Number(expenseTotal.toFixed(2)), fill: 'hsl(var(--kpi-expense))' },
-    ];
-  }, [monthlyPayments, extraordinaryPayments, expenses]);
-
-  // Chart 2: Income distribution (pie)
+  // Chart 2: Income distribution (pie) - filtered
   const incomeDistribution = useMemo(() => {
     const data = [];
-    if (treasuryIncome > 0) data.push({
-      name: 'Tesorería',
-      value: Number(treasuryIncome.toFixed(2))
-    });
-    if (extraordinaryIncome > 0) data.push({
-      name: 'Cuotas Ext.',
-      value: Number(extraordinaryIncome.toFixed(2))
-    });
-    if (degreeFeeTotal > 0) data.push({
-      name: 'Der. Grado',
-      value: Number(degreeFeeTotal.toFixed(2))
-    });
+    if (treasuryIncome > 0) data.push({ name: 'Tesorería', value: Number(treasuryIncome.toFixed(2)) });
+    if (extraordinaryIncome > 0) data.push({ name: 'Cuotas Ext.', value: Number(extraordinaryIncome.toFixed(2)) });
+    if (filteredDegreeFeeTotal > 0) data.push({ name: 'Der. Grado', value: Number(filteredDegreeFeeTotal.toFixed(2)) });
     return data;
-  }, [treasuryIncome, extraordinaryIncome, degreeFeeTotal]);
+  }, [treasuryIncome, extraordinaryIncome, filteredDegreeFeeTotal]);
 
-  // Chart 3: Expenses by category
+  // Chart 3: Expenses by category - filtered
   const expensesByCategory = useMemo(() => {
     const catMap: Record<string, number> = {};
-    expenses.forEach(e => {
+    filteredExpenses.forEach(e => {
       const cat = e.category || 'Sin categoría';
       catMap[cat] = (catMap[cat] || 0) + Number(e.amount);
     });
     return Object.entries(catMap).map(([name, value]) => ({
-      name,
-      value: Number(value.toFixed(2))
+      name, value: Number(value.toFixed(2))
     })).sort((a, b) => b.value - a.value);
-  }, [expenses]);
+  }, [filteredExpenses]);
+
   const chartConfig = {
-    ingresos: {
-      label: 'Ingresos',
-      color: 'hsl(var(--kpi-income))'
-    },
-    gastos: {
-      label: 'Gastos',
-      color: 'hsl(var(--kpi-expense))'
-    }
+    ingresos: { label: 'Ingresos', color: 'hsl(var(--kpi-income))' },
+    gastos: { label: 'Gastos', color: 'hsl(var(--kpi-expense))' },
   };
-  return <div className="space-y-8">
-      <div>
-        <h1 className="text-4xl font-bold">Dashboard</h1>
-        <p className="mt-2 text-xl text-muted-foreground">
-          Sistema de Gestión de Logía – Año Logial {currentCalendarYear}-{nextCalendarYear}
-        </p>
+
+  const filterLabel = selectedFilter
+    ? `${MONTH_NAMES[selectedFilter.month - 1]} ${selectedFilter.year}`
+    : 'Todos';
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-bold">Dashboard</h1>
+          <p className="mt-2 text-xl text-muted-foreground">
+            Año Logial {currentCalendarYear}-{nextCalendarYear}
+          </p>
+        </div>
+        <div className="w-56">
+          <Select value={filterValue} onValueChange={setFilterValue}>
+            <SelectTrigger>
+              <SelectValue placeholder="Filtrar por mes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos (vista general)</SelectItem>
+              {filterOptions.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -220,26 +259,37 @@ function Dashboard() {
 
       {/* Charts Row */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Chart 1: Current month Income vs Expenses */}
+        {/* Chart 1: Income vs Expenses */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-semibold">
-              Ingresos vs Gastos — {MONTH_NAMES[new Date().getMonth()]} {new Date().getFullYear()}
+              Ingresos vs Gastos — {filterLabel}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <ChartContainer config={chartConfig} className="h-[280px] w-full">
-              <BarChart data={currentMonthData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                  {currentMonthData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                </Bar>
-              </BarChart>
+              {selectedFilter ? (
+                <BarChart data={incomeVsExpenseData as Array<{ name: string; value: number; fill: string }>} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {(incomeVsExpenseData as Array<{ fill: string }>).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              ) : (
+                <BarChart data={incomeVsExpenseData as Array<{ name: string; ingresos: number; gastos: number }>} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="ingresos" fill="hsl(var(--kpi-income))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="gastos" fill="hsl(var(--kpi-expense))" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              )}
             </ChartContainer>
           </CardContent>
         </Card>
@@ -247,29 +297,29 @@ function Dashboard() {
         {/* Chart 2: Income Distribution Donut */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">Distribución de Ingresos</CardTitle>
+            <CardTitle className="text-base font-semibold">Distribución de Ingresos — {filterLabel}</CardTitle>
           </CardHeader>
           <CardContent>
-            {incomeDistribution.length === 0 ? <div className="flex items-center justify-center h-[280px] text-muted-foreground text-sm">
+            {incomeDistribution.length === 0 ? (
+              <div className="flex items-center justify-center h-[280px] text-muted-foreground text-sm">
                 Sin ingresos registrados
-              </div> : <div className="h-[280px] w-full">
+              </div>
+            ) : (
+              <div className="h-[280px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={incomeDistribution} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value" label={({
-                  name,
-                  percent
-                }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                      {incomeDistribution.map((_, index) => <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+                    <Pie data={incomeDistribution} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                      {incomeDistribution.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      ))}
                     </Pie>
-                    <Tooltip formatter={(value: number) => [`$${value.toFixed(2)}`, '']} contentStyle={{
-                  backgroundColor: 'hsl(var(--card))',
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px',
-                  fontSize: '12px'
-                }} />
+                    <Tooltip formatter={(value: number) => [`$${value.toFixed(2)}`, '']}
+                      contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }} />
                   </PieChart>
                 </ResponsiveContainer>
-              </div>}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -277,59 +327,56 @@ function Dashboard() {
       {/* Chart 3: Expenses by Category */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold">Gastos por Categoría</CardTitle>
+          <CardTitle className="text-base font-semibold">Gastos por Categoría — {filterLabel}</CardTitle>
         </CardHeader>
         <CardContent>
-          {expensesByCategory.length === 0 ? <div className="flex items-center justify-center h-[200px] text-muted-foreground text-sm">
+          {expensesByCategory.length === 0 ? (
+            <div className="flex items-center justify-center h-[200px] text-muted-foreground text-sm">
               Sin gastos registrados
-            </div> : <div className="h-[250px] w-full">
+            </div>
+          ) : (
+            <div className="h-[250px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={expensesByCategory} layout="vertical" margin={{
-              top: 5,
-              right: 30,
-              left: 80,
-              bottom: 5
-            }}>
+                <BarChart data={expensesByCategory} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                  <XAxis type="number" tick={{
-                fontSize: 11
-              }} />
-                  <YAxis dataKey="name" type="category" tick={{
-                fontSize: 11
-              }} width={75} />
-                  <Tooltip formatter={(value: number) => [`$${value.toFixed(2)}`, 'Monto']} contentStyle={{
-                backgroundColor: 'hsl(var(--card))',
-                border: '1px solid hsl(var(--border))',
-                borderRadius: '8px',
-                fontSize: '12px'
-              }} />
+                  <XAxis type="number" tick={{ fontSize: 11 }} />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={75} />
+                  <Tooltip formatter={(value: number) => [`$${value.toFixed(2)}`, 'Monto']}
+                    contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }} />
                   <Bar dataKey="value" fill="hsl(var(--destructive))" radius={[0, 3, 3, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>}
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* Birthdays */}
-      {birthdayMembers.length > 0 && <Card>
+      {birthdayMembers.length > 0 && (
+        <Card>
           <CardHeader>
             <CardTitle>Cumpleaños Hoy</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {birthdayMembers.map(member => member.phone && <Button key={member.id} size="sm" variant="outline" className="h-7 text-xs gap-1 bg-success/10 border-success/30 hover:bg-success/20" onClick={() => window.open(generateBirthdayWhatsAppLink(member), '_blank')}>
-                    <MessageCircle className="h-3 w-3" />
-                    {member.full_name.split(' ')[0]}
-                  </Button>)}
+              {birthdayMembers.map(member => member.phone && (
+                <Button key={member.id} size="sm" variant="outline"
+                  className="h-7 text-xs gap-1 bg-success/10 border-success/30 hover:bg-success/20"
+                  onClick={() => window.open(generateBirthdayWhatsAppLink(member), '_blank')}>
+                  <MessageCircle className="h-3 w-3" />
+                  {member.full_name.split(' ')[0]}
+                </Button>
+              ))}
             </div>
           </CardContent>
-        </Card>}
+        </Card>
+      )}
 
       {/* Income Detail */}
       <Dialog open={showIncomeDetail} onOpenChange={setShowIncomeDetail}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Desglose de Ingresos</DialogTitle>
+            <DialogTitle>Desglose de Ingresos — {filterLabel}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
@@ -342,7 +389,7 @@ function Dashboard() {
             </div>
             <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
               <span className="text-sm font-medium">Derechos de grado</span>
-              <span className="font-bold">${degreeFeeTotal.toFixed(2)}</span>
+              <span className="font-bold">${filteredDegreeFeeTotal.toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-center p-3 rounded-lg border-t pt-4">
               <span className="text-sm font-bold">Total ingresos</span>
@@ -356,22 +403,27 @@ function Dashboard() {
       <Dialog open={showExpenseDetail} onOpenChange={setShowExpenseDetail}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detalle de Gastos</DialogTitle>
+            <DialogTitle>Detalle de Gastos — {filterLabel}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            {expenses.length === 0 ? <p className="text-sm text-muted-foreground text-center py-4">No hay gastos registrados</p> : expenses.slice(0, 20).map(expense => <div key={expense.id} className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
+            {filteredExpenses.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No hay gastos registrados</p>
+            ) : (
+              filteredExpenses.slice(0, 20).map(expense => (
+                <div key={expense.id} className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
                   <div>
                     <p className="text-sm font-medium">{expense.description}</p>
                     <p className="text-xs text-muted-foreground">{expense.category} - {expense.expense_date}</p>
                   </div>
                   <span className="font-bold text-destructive">${Number(expense.amount).toFixed(2)}</span>
-                </div>)}
-            {expenses.length > 20 && <Button variant="outline" className="w-full" onClick={() => {
-            setShowExpenseDetail(false);
-            navigate('/expenses');
-          }}>
+                </div>
+              ))
+            )}
+            {filteredExpenses.length > 20 && (
+              <Button variant="outline" className="w-full" onClick={() => { setShowExpenseDetail(false); navigate('/expenses'); }}>
                 Ver todos los gastos
-              </Button>}
+              </Button>
+            )}
             <div className="flex justify-between items-center p-3 rounded-lg border-t pt-4">
               <span className="text-sm font-bold">Total gastos</span>
               <span className="text-lg font-bold text-destructive">${totalExpenses.toFixed(2)}</span>
@@ -379,6 +431,8 @@ function Dashboard() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>;
+    </div>
+  );
 }
+
 export default Dashboard;
