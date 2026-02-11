@@ -203,8 +203,8 @@ export default function CuentasPorCobrar() {
                   <TableHead>Grado</TableHead>
                   <TableHead className="text-center">Meses pendientes</TableHead>
                   <TableHead className="text-right">Tesorería</TableHead>
-                  <TableHead className="text-center">Cuotas Extra.</TableHead>
-                  <TableHead className="text-right">Extraordinarias</TableHead>
+                  <TableHead className="text-center">Numero Cuotas Extra.</TableHead>
+                  <TableHead className="text-right">Total Extraordinarias</TableHead>
                   <TableHead className="text-right font-bold">Total</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
